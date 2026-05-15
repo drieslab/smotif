@@ -1,0 +1,441 @@
+---
+title: "Spatial multi-cellular motifs with smotif"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Spatial multi-cellular motifs with smotif}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE, comment = "#>",
+  fig.width = 7, fig.height = 4
+)
+```
+
+This vignette walks through the end-to-end `smotif` workflow on the
+prepared workshop Xenium dataset (a small human lung cancer FFPE slide).
+The data is loaded from prebuilt parquet shipped in
+`inst/extdata/workshop_xenium/`; `Giotto` is a Suggests-only dependency
+and the package itself never re-runs the ingestion. Cell-type labels in
+this vignette are the LLM-fallback `cluster_<n>` strings — set
+`ANTHROPIC_API_KEY` and rerun `inst/scripts/prepare_workshop_xenium.R`
+to get real cell-type names.
+
+## 1. Load the prepared SpatialGraph
+
+```{r}
+library(smotif)
+library(ggplot2)
+ext <- system.file("extdata", "workshop_xenium", package = "smotif")
+sg <- read_spatial_graph(
+  file.path(ext, "nodes.parquet"),
+  file.path(ext, "edges.parquet")
+)
+print(sg)
+```
+
+## 2. Tissue layout
+
+The slide is small (~7.5k cells) and roughly 1 mm × 0.8 mm. Coloring by
+cluster identity reveals the cell-type composition; coloring the same
+points by `region_id` shows the niche segmentation that
+`prepare_workshop_xenium.R` derived from cell-type composition over
+spatial neighbors:
+
+```{r layout, fig.width = 9, fig.height = 4.5}
+nodes_df <- as.data.frame(sg$nodes)
+
+p_ct <- ggplot(nodes_df, aes(x = x, y = y, color = cell_type)) +
+  geom_point(size = 0.4, alpha = 0.85) +
+  coord_fixed() +
+  labs(title = "cells by cluster", color = NULL) +
+  theme_minimal(base_size = 9) +
+  theme(legend.key.size = unit(0.4, "cm"))
+
+p_rg <- ggplot(nodes_df, aes(x = x, y = y, color = region_id)) +
+  geom_point(size = 0.4, alpha = 0.85) +
+  scale_color_brewer(palette = "Set2") +
+  coord_fixed() +
+  labs(title = "cells by niche (region_id)", color = NULL) +
+  theme_minimal(base_size = 9) +
+  theme(legend.key.size = unit(0.4, "cm"))
+
+# side-by-side using patchwork-free plain layout:
+gridExtra::grid.arrange(p_ct, p_rg, ncol = 2)
+```
+
+The three niches are spatially distinct: `niche_2` is the dense
+top-right region (cluster_1-dominant epithelium), `niche_3` is the
+left band (cluster_4-dominant), and `niche_1` is the speckled middle
+zone where multiple cell types intermix.
+
+## 3. Find size-2 and size-3 motifs
+
+```{r}
+m2 <- find_motifs(sg, size = 2L)
+m3 <- find_motifs(sg, size = 3L)
+m3$catalog[order(-count)][1:5,
+  .(motif_id, canonical_iso_class, count)]
+```
+
+```{r}
+stopifnot(sum(m2$catalog$count) == nrow(sg$edges))
+m3$catalog[, .(types = .N, total = sum(count)),
+           by = canonical_iso_class]
+```
+
+## 4. Where does a motif live in space?
+
+Each `Motifs` instance has an `incidence` table linking instances to the
+`cell_id`s that participate. We can map any motif onto the slide by
+counting, per cell, how many instances of that motif touch it. This
+turns the abstract motif catalog into a tissue-level heatmap.
+
+```{r motif-spatial, fig.width = 9, fig.height = 4.5}
+motif_density <- function(motifs, motif_id_target) {
+  inc <- motifs$incidence[motif_id == motif_id_target,
+                          .(n_instances = .N), by = cell_id]
+  merge(as.data.frame(sg$nodes)[, c("cell_id", "x", "y")],
+        inc, by = "cell_id", all.x = TRUE) |>
+    transform(n_instances = ifelse(is.na(n_instances), 0L,
+                                   n_instances))
+}
+
+top_motif_id <- m3$catalog[which.max(count), motif_id]
+top_density  <- motif_density(m3, top_motif_id)
+top_motif_id
+
+p_motif <- ggplot(top_density, aes(x = x, y = y, color = n_instances)) +
+  geom_point(size = 0.4, alpha = 0.85) +
+  scale_color_viridis_c(option = "magma", trans = "log1p") +
+  coord_fixed() +
+  labs(title = sprintf("instance count per cell — %s", top_motif_id),
+       color = "n inst.") +
+  theme_minimal(base_size = 9)
+
+p_motif
+```
+
+The most common motif (a cluster_4 self-self-self wedge) lights up
+exactly the cluster_4-dominated band, as expected. Boring on its own,
+but a useful sanity check that incidence and coordinates line up.
+
+## 5. Enrichment under a global label-permutation null
+
+```{r}
+e_global <- test_motif_enrichment(
+  m3, sg,
+  null = "label_permutation",
+  n_perm = 200L, seed = 1L
+)
+head(e_global, 5)[,
+  .(motif_id, observed, mean_null, z, p_emp, fold)]
+```
+
+## 6. Region-stratified vs unstratified
+
+```{r}
+e_strat <- test_motif_enrichment(
+  m3, sg,
+  null = "region_stratified",
+  n_perm = 200L, seed = 1L
+)
+joined <- merge(
+  e_global[, .(motif_id, p_global = p_emp, z_global = z, m_global = mean_null)],
+  e_strat[,  .(motif_id, p_strat  = p_emp, z_strat  = z, m_strat  = mean_null)],
+  by = "motif_id"
+)
+head(joined[order(p_strat)], 5)
+```
+
+The two nulls disagree most where the global null is too generous —
+i.e. where the unstratified shuffle ignores the niche structure that
+already concentrates same-cluster cells. The scatter below makes the
+shrinkage explicit:
+
+```{r null-compare, fig.width = 6, fig.height = 5}
+plot_null <- ggplot(joined, aes(x = z_global, y = z_strat)) +
+  geom_abline(slope = 1, intercept = 0, color = "grey60",
+              linetype = "dashed") +
+  geom_point(alpha = 0.5, size = 0.7) +
+  coord_fixed() +
+  labs(x = "z (label permutation)", y = "z (region stratified)",
+       title = "z-scores shrink toward zero under stratified null") +
+  theme_minimal(base_size = 10)
+plot_null
+```
+
+## 7. Top-enriched motif → associated genes
+
+```{r}
+expr <- readRDS(file.path(ext, "expression.rds"))
+top_strat_motif <- e_strat[which.min(p_emp), motif_id]
+g <- associate_genes(
+  m3, expr, sg,
+  method = "wilcoxon",
+  min_cells = 30L, min_in_expressed = 5L
+)
+head(g[motif_id == top_strat_motif][order(p)],
+     10)[, .(gene, n_in, mean_in, mean_out, log2FC, z, p_adj_BH)]
+```
+
+## 8. Per-sample meta-analysis
+
+Pooling cells across samples (the default in §7) conflates two very
+different patterns: a gene that's consistently enriched in motif cells
+across every sample versus a gene that's enriched in only *one* sample
+with a large effect. `pooling = "per_sample"` runs the Wilcoxon test
+inside each sample and combines via Stouffer-weighted Z. The combined
+statistic still favors true reproducible signals; the new `sd_log2FC`
+column flags heterogeneous ones.
+
+The workshop slide is a single sample, so to demonstrate the workflow
+we split it into three spatial *pseudo-samples* by x-coordinate
+quantiles. Cross-tile edges are dropped so each tile is a
+self-contained spatial graph. With pseudo-samples drawn from the same
+underlying biology, `sd_log2FC` should be small for genuine signals —
+the diagnostic value of the metric is most visible on real
+multi-sample data, but the workflow is identical:
+
+```{r pseudo-split-build}
+new_nodes <- data.table::copy(sg$nodes)
+xq <- stats::quantile(new_nodes$x, probs = c(0, 1/3, 2/3, 1))
+new_nodes[, sample_id := as.character(cut(
+  x, breaks = xq, labels = c("tile_A", "tile_B", "tile_C"),
+  include.lowest = TRUE
+))]
+new_edges <- data.table::copy(sg$edges)
+src_tile <- new_nodes[match(new_edges$source, cell_id), sample_id]
+tgt_tile <- new_nodes[match(new_edges$target, cell_id), sample_id]
+keep <- src_tile == tgt_tile
+new_edges <- new_edges[keep]
+new_edges[, sample_id := src_tile[keep]]
+sg_pseudo <- SpatialGraph(
+  new_nodes, new_edges,
+  meta = list(build_method = "pseudo_split")
+)
+```
+
+```{r pseudo-split-map, fig.width = 6, fig.height = 4}
+ggplot(as.data.frame(sg_pseudo$nodes),
+       aes(x = x, y = y, color = sample_id)) +
+  geom_point(size = 0.4, alpha = 0.85) +
+  scale_color_brewer(palette = "Set2") +
+  coord_fixed() +
+  labs(title = "Pseudo-samples (workshop slide tiled by x-quantile)",
+       color = NULL) +
+  theme_minimal(base_size = 9)
+```
+
+Now find motifs on the pseudo-multi-sample graph and run both pooling
+modes for the same `min_cells` settings:
+
+```{r per-sample-run}
+m_pseudo <- find_motifs(sg_pseudo, size = 3L)
+res_pooled <- associate_genes(
+  m_pseudo, expr, sg_pseudo,
+  method = "wilcoxon", min_cells = 30L, min_in_expressed = 5L,
+  pooling = "pooled"
+)
+res_meta <- associate_genes(
+  m_pseudo, expr, sg_pseudo,
+  method = "wilcoxon", min_cells = 30L, min_in_expressed = 5L,
+  pooling = "per_sample"
+)
+target_motif <- res_meta[which.min(p_combined), motif_id]
+target_motif
+head(res_meta[motif_id == target_motif], 8)[,
+  .(gene, n_samples_tested, mean_log2FC, sd_log2FC,
+    z_combined, p_adj_BH)]
+```
+
+The diagnostic plot for per-sample meta-analysis is `mean_log2FC` vs
+`sd_log2FC`. Each point is a gene tested in this motif; reproducible
+hits sit in the bottom-right (high mean, low spread), single-sample
+drivers sit in the top-right:
+
+```{r per-sample-volcano, fig.width = 6.5, fig.height = 5}
+plot_dt <- res_meta[motif_id == target_motif &
+                    n_samples_tested >= 2L]
+top5 <- head(plot_dt[order(p_combined)], 5L)
+
+ggplot(plot_dt, aes(x = mean_log2FC, y = sd_log2FC)) +
+  geom_point(aes(color = -log10(p_combined)), size = 1.6,
+             alpha = 0.85) +
+  scale_color_viridis_c(option = "plasma") +
+  geom_text(data = top5, aes(label = gene),
+            hjust = -0.1, vjust = -0.3, size = 3) +
+  labs(x = "mean log2FC across pseudo-samples",
+       y = "sd log2FC across pseudo-samples",
+       color = "-log10(p_combined)",
+       title = sprintf("Per-sample meta-analysis: %s",
+                       target_motif),
+       subtitle = "Reproducible hits: high mean, low sd (lower-right)") +
+  theme_minimal(base_size = 9)
+```
+
+Comparing the top genes from the two pooling modes makes the rank
+shift visible — pooled mode concatenates all cells and can let a
+single-sample driver float to the top, whereas per-sample mode
+demotes it:
+
+```{r pooled-vs-meta}
+top_pooled <- head(res_pooled[motif_id == target_motif][order(p)],
+                   10)[, .(gene, log2FC_pooled = log2FC,
+                           p_adj_pooled = p_adj_BH)]
+top_meta <- head(res_meta[motif_id == target_motif][
+  order(p_combined)], 10)[, .(gene, mean_log2FC, sd_log2FC,
+                              p_adj_meta = p_adj_BH)]
+merge(top_pooled, top_meta, by = "gene", all = TRUE)[
+  order(p_adj_meta)
+]
+```
+
+Because the pseudo-samples come from the same slide, most reproducible
+signals stay strong in both modes (small `sd_log2FC`). On a real
+multi-sample dataset the same code would surface genes whose spatial
+motif association replicates across patients/samples — the canonical
+biological-validation step before reporting motif-driven gene findings.
+
+## 9. Per-niche motif distributions
+
+`subset_region()` produces a per-niche `SpatialGraph` (only edges with
+both endpoints inside the niche survive); `compare_motifs()` then
+performs a chi-square test of motif-by-niche independence:
+
+```{r}
+sg_n <- list(
+  niche_1 = subset_region(sg, region_id == "niche_1"),
+  niche_2 = subset_region(sg, region_id == "niche_2"),
+  niche_3 = subset_region(sg, region_id == "niche_3")
+)
+m_n <- lapply(sg_n, find_motifs, size = 3L)
+cmp <- compare_motifs(m_n)
+head(cmp, 6)[,
+  .(motif_id, count_niche_1, count_niche_2, count_niche_3,
+    chi2, p_adj_BH)]
+```
+
+A heatmap of the top 20 most niche-divergent motifs makes the
+"each niche has its own motif signature" story visible at a glance.
+Each row is row-normalized so the colors show what fraction of a
+motif's instances live in each niche:
+
+```{r niche-heatmap, fig.width = 8, fig.height = 6}
+top_n <- 20L
+top_cmp <- head(cmp, top_n)
+hm_long <- data.table::melt(
+  top_cmp[, .(motif_id, niche_1 = count_niche_1,
+              niche_2 = count_niche_2, niche_3 = count_niche_3)],
+  id.vars = "motif_id", variable.name = "niche", value.name = "count"
+)
+hm_long[, prop := count / sum(count), by = motif_id]
+hm_long[, motif_id := factor(motif_id, levels = rev(top_cmp$motif_id))]
+
+ggplot(hm_long, aes(x = niche, y = motif_id, fill = prop)) +
+  geom_tile() +
+  scale_fill_viridis_c(limits = c(0, 1)) +
+  labs(x = NULL, y = NULL,
+       fill = "fraction\nof instances",
+       title = sprintf("Top %d niche-divergent size-3 motifs", top_n)) +
+  theme_minimal(base_size = 9) +
+  theme(axis.text.y = element_text(size = 7))
+```
+
+## 10. Niche-defining motifs in physical space
+
+Picking one niche-defining motif per niche and mapping their cells side
+by side shows the spatial signature of each niche:
+
+```{r per-niche-spatial, fig.width = 10, fig.height = 4}
+top_per_niche <- function(cmp, niche_col) {
+  cnt <- cmp[[niche_col]]
+  other <- rowSums(cmp[, .(count_niche_1, count_niche_2, count_niche_3)]) - cnt
+  cmp[order(-(cnt - other))][1L, motif_id]
+}
+
+motifs_to_show <- c(
+  niche_1 = top_per_niche(cmp, "count_niche_1"),
+  niche_2 = top_per_niche(cmp, "count_niche_2"),
+  niche_3 = top_per_niche(cmp, "count_niche_3")
+)
+
+facet_data <- data.table::rbindlist(lapply(seq_along(motifs_to_show),
+  function(i) {
+    md <- motif_density(m3, motifs_to_show[i])
+    data.table::data.table(
+      md,
+      facet = sprintf("%s\n%s",
+                      names(motifs_to_show)[i], motifs_to_show[i])
+    )
+  }))
+
+ggplot(facet_data, aes(x = x, y = y, color = n_instances)) +
+  geom_point(size = 0.35, alpha = 0.85) +
+  scale_color_viridis_c(option = "magma", trans = "log1p") +
+  coord_fixed() +
+  facet_wrap(~ facet, ncol = 3L) +
+  labs(color = "n inst.") +
+  theme_minimal(base_size = 8) +
+  theme(strip.text = element_text(size = 7),
+        axis.title = element_blank(),
+        axis.text = element_blank(),
+        panel.grid = element_blank())
+```
+
+The three panels tile the slide cleanly: each niche's defining motif
+lights up just that niche's footprint. This is the "spatial domain
+signature" view — you can see at a glance which 3-cell pattern marks
+which region of tissue.
+
+## 11. Cross-niche bridging motifs
+
+The motifs above are pure within-niche signals. The more interesting
+biology is in motifs that *bridge* niches — patterns made up of cell
+types that mostly live in different niches but occasionally meet. We
+can pick those out as motifs whose color tuple mixes cluster_1, _4, or
+_2 (the three niche-dominant types) and that still occur enough times
+to be detectable:
+
+```{r bridges}
+mixed <- cmp[
+  grepl("cluster_(1|2|4).*cluster_(1|2|4)", motif_id) &
+  !grepl("(cluster_1[-_]cluster_1[-_]cluster_1)|(cluster_2[-_]cluster_2[-_]cluster_2)|(cluster_4[-_]cluster_4[-_]cluster_4)",
+         motif_id) &
+  total >= 200L
+]
+head(mixed[order(-chi2)], 5)[,
+  .(motif_id, count_niche_1, count_niche_2, count_niche_3, total, chi2)]
+```
+
+```{r bridge-spatial, fig.width = 9, fig.height = 4.5}
+bridge_id <- mixed[order(-chi2)][1L, motif_id]
+bridge_density <- motif_density(m3, bridge_id)
+ggplot(bridge_density, aes(x = x, y = y, color = n_instances)) +
+  geom_point(size = 0.4, alpha = 0.85) +
+  scale_color_viridis_c(option = "magma", trans = "log1p") +
+  coord_fixed() +
+  labs(title = sprintf("bridge motif: %s", bridge_id), color = "n inst.") +
+  theme_minimal(base_size = 9)
+```
+
+These bridging instances cluster at niche interfaces — the boundaries
+where two domains touch. They're the small set of motifs that the
+region-stratified null surfaces but the global null misses, because
+the stratified null cannot reproduce niche-niche contacts under
+within-niche shuffling.
+
+## 12. Bar chart of the most common size-3 motifs
+
+```{r, fig.width = 8, fig.height = 5}
+plot(m3, top = 15L)
+```
+
+## What's next
+
+`smotif` v0.1 covers sizes 2, 3, and 4. The Rust backend, ≥5-node
+motifs, directed motifs, hypergraphs, motif embeddings, per-sample
+meta-analysis, and Giotto Suite integration all land in v0.2 — see
+`NEWS.md` for the full out-of-scope list.

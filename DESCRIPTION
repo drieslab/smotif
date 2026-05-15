@@ -1,0 +1,42 @@
+Package: smotif
+Type: Package
+Title: Spatial Multi-Cellular Motifs
+Version: 0.1.0
+Authors@R: person("Ruben", "Dries", email = "rdries@bu.edu",
+    role = c("aut", "cre"))
+Description: Discovery and statistical evaluation of recurrent
+    multi-cellular motifs (size 2, 3, and 4) in spatial omics data.
+    Provides a lightweight 'SpatialGraph' representation backed by
+    parquet, enumeration over igraph, spatially-aware null models,
+    motif-to-gene association, and cross-region or cross-sample
+    comparison. Designed to be framework-agnostic so that the core
+    can be folded into Giotto Suite later.
+License: MIT + file LICENSE
+Encoding: UTF-8
+Depends:
+    R (>= 4.2)
+Imports:
+    arrow,
+    data.table,
+    igraph,
+    Matrix
+Suggests:
+    FNN,
+    Giotto,
+    smotifrs,
+    GiottoClass,
+    GiottoVisuals,
+    dbscan,
+    deldir,
+    ggplot2,
+    gridExtra,
+    httr2,
+    jsonlite,
+    knitr,
+    motifr,
+    rmarkdown,
+    testthat (>= 3.0.0)
+VignetteBuilder: knitr
+Config/testthat/edition: 3
+Roxygen: list(markdown = TRUE)
+RoxygenNote: 7.3.3

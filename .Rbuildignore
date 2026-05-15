@@ -1,0 +1,6 @@
+^.*\.Rproj$
+^\.Rproj\.user$
+^\.git$
+^\.gitignore$
+^\.DS_Store$
+^inst/extdata/workshop_xenium/giotto_annotated$
