@@ -380,3 +380,56 @@ motif_instances <- function(sg, motif_ids, size = 3L, max_per_class = 5000) {
   out[, "node" := NULL]
   out[]
 }
+
+
+#' Motif enrichment straight from a disk-backed edge store
+#'
+#' Runs enrichment against a GiottoDisk `parquetEdgeStore` without building the
+#' graph in R. Useful when the network is large enough that materializing an
+#' igraph is itself the expensive step.
+#'
+#' Node ids are already integers in that format, so no string hashing happens
+#' on either side. Cell type labels are supplied aligned to the store's
+#' sidecar order, which [smotifrs::edge_store_nodes()] returns.
+#'
+#' @param nodes_path,edges_path paths to the store's `nodes/` and `edges/`
+#'   parquet files.
+#' @param cell_type labels, one per node, in sidecar `int_id` order.
+#' @param size,n_perm,seed,null,... passed through to the backend.
+#' @returns a `data.table` in the same shape as [motif_enrichment()].
+#' @export
+motif_enrichment_store <- function(nodes_path,
+                                   edges_path,
+                                   cell_type,
+                                   size = 3L,
+                                   n_perm = 1000L,
+                                   seed = 1L,
+                                   null = c("label", "conditional"),
+                                   ...) {
+  if (!requireNamespace("smotifrs", quietly = TRUE)) {
+    stop(
+      "reading a disk-backed edge store needs the smotifrs backend",
+      call. = FALSE
+    )
+  }
+  smotifrs::motif_enrichment_edge_store(
+    nodes_path = nodes_path, edges_path = edges_path,
+    cell_type = cell_type, size = size, n_perm = n_perm,
+    seed = seed, null = match.arg(null), ...
+  )
+}
+
+
+#' Node ids of a disk-backed edge store, in sidecar order
+#'
+#' The order [motif_enrichment_store()] expects `cell_type` in.
+#'
+#' @param nodes_path path to the store's `nodes/` parquet.
+#' @returns a `data.table` with `node_id` and `int_id`.
+#' @export
+store_node_order <- function(nodes_path) {
+  if (!requireNamespace("smotifrs", quietly = TRUE)) {
+    stop("needs the smotifrs backend", call. = FALSE)
+  }
+  smotifrs::edge_store_nodes(nodes_path)
+}
