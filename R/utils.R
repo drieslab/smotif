@@ -85,3 +85,8 @@ utils::globalVariables(c(
   Matrix::sparseMatrix(i = integer(), j = integer(),
                        x = numeric(), dims = c(0L, 0L))
 }
+
+# data.table NSE columns used in enrichment2.R
+utils::globalVariables(c(
+  "observed", "expected", "sd_null", "p_enrich", "p_deplete", "p_adj", "z"
+))

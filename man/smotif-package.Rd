@@ -11,5 +11,10 @@ Discovery and statistical evaluation of recurrent multi-cellular motifs (size 2,
 \author{
 \strong{Maintainer}: Ruben Dries \email{rdries@bu.edu}
 
+Authors:
+\itemize{
+  \item Ruben Dries \email{rdries@bu.edu}
+}
+
 }
 \keyword{internal}
