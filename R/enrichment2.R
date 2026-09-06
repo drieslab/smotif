@@ -325,3 +325,58 @@ motif_enrichment <- function(sg,
   attr(out, "backend") <- "r"
   out[]
 }
+
+
+#' Cells making up occurrences of selected motif classes
+#'
+#' Pick the motifs worth looking at from [motif_enrichment()] first, then ask
+#' where they are. Instances are returned for named classes only, so the output
+#' is bounded by those classes' counts rather than by the whole enumeration --
+#' at size 4 the full instance set is tens of millions of rows on a real
+#' dataset, which is why it is never returned by default.
+#'
+#' @param sg a [SpatialGraph()].
+#' @param motif_ids character vector of `motif_id` values.
+#' @param size motif size the ids came from.
+#' @param max_per_class cap on instances per class; `Inf` for no cap.
+#' @returns a `data.table` with `motif_id`, `instance`, `slot` (structural
+#'   position within the motif) and `cell_id`, in long form.
+#' @examples
+#' set.seed(1)
+#' sg <- build_spatial_graph(cbind(x = runif(50), y = runif(50)),
+#'     cell_types = sample(c("T", "B"), 50, TRUE),
+#'     sample_id = "s1", method = "knn", k = 4
+#' )
+#' e <- motif_enrichment(sg, size = 3L, n_perm = 49L)
+#' motif_instances(sg, e$motif_id[1], size = 3L)
+#' @export
+motif_instances <- function(sg, motif_ids, size = 3L, max_per_class = 5000) {
+  if (!inherits(sg, "SpatialGraph")) {
+    stop("`sg` must be a SpatialGraph", call. = FALSE)
+  }
+  if (!requireNamespace("smotifrs", quietly = TRUE)) {
+    stop(
+      "motif_instances() needs the smotifrs backend; install it to use it",
+      call. = FALSE
+    )
+  }
+  ids <- as.character(sg$nodes$cell_id)
+  out <- smotifrs::motif_instances_rs(
+    from = match(as.character(sg$edges$source), ids),
+    to = match(as.character(sg$edges$target), ids),
+    cell_type = factor(as.character(sg$nodes$cell_type)),
+    motif_ids = motif_ids,
+    n_nodes = length(ids),
+    size = size,
+    max_per_class = max_per_class
+  )
+  if (!nrow(out)) {
+    return(data.table::data.table(
+      motif_id = character(), instance = integer(),
+      slot = integer(), cell_id = character()
+    ))
+  }
+  out[, "cell_id" := ids[out$node]]
+  out[, "node" := NULL]
+  out[]
+}
