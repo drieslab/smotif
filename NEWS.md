@@ -1,3 +1,9 @@
+# smotif 0.2.0
+
+- `motif_enrichment_stream()`: enrichment over an Arrow stream of edges, with
+  labels passed as a lookup keyed by integer node id. The network's nodes are
+  the stream's endpoints. Needs smotifrs >= 0.2.0.
+
 # smotif 0.1.0 (in development)
 
 Initial scaffold of the `smotif` package for spatial multi-cellular motif

@@ -1,7 +1,7 @@
 Package: smotif
 Type: Package
 Title: Spatial Multi-Cellular Motifs
-Version: 0.1.0
+Version: 0.2.0
 Authors@R: person("Ruben", "Dries", email = "rdries@bu.edu",
     role = c("aut", "cre"))
 Description: Discovery and statistical evaluation of recurrent
@@ -23,7 +23,7 @@ Imports:
 Suggests:
     FNN,
     Giotto,
-    smotifrs,
+    smotifrs (>= 0.2.0),
     GiottoClass,
     GiottoVisuals,
     dbscan,
