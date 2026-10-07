@@ -420,6 +420,43 @@ motif_enrichment_store <- function(nodes_path,
 }
 
 
+#' Motif enrichment over a stream of edges
+#'
+#' Runs enrichment against edges pulled from an Arrow stream, so whatever
+#' produced the stream decides the edge set -- a pending subset on a
+#' disk-backed store is honoured without the store's files being read here.
+#' The network's nodes are the stream's endpoints.
+#'
+#' Labels travel beside the stream as a lookup keyed by integer node id.
+#' Mapping cell IDs to those integers is the caller's business; the lookup may
+#' cover nodes the stream never reaches, but every endpoint needs a label.
+#'
+#' @param edges anything [nanoarrow::as_nanoarrow_array_stream()] accepts, with
+#'   integer `from_id` and `to_id` columns. Read once.
+#' @param int_ids integer node ids keying the label lookup, without duplicates.
+#' @param cell_type labels, one per entry of `int_ids`.
+#' @param size,n_perm,seed,null,... passed through to the backend.
+#' @returns a `data.table` in the same shape as [motif_enrichment()].
+#' @export
+motif_enrichment_stream <- function(edges,
+                                    int_ids,
+                                    cell_type,
+                                    size = 3L,
+                                    n_perm = 1000L,
+                                    seed = 1L,
+                                    null = c("label", "conditional"),
+                                    ...) {
+  if (!requireNamespace("smotifrs", quietly = TRUE)) {
+    stop("reading a stream of edges needs the smotifrs backend", call. = FALSE)
+  }
+  smotifrs::motif_enrichment_stream(
+    edges = edges, int_ids = int_ids,
+    cell_type = cell_type, size = size, n_perm = n_perm,
+    seed = seed, null = match.arg(null), ...
+  )
+}
+
+
 #' Node ids of a disk-backed edge store, in sidecar order
 #'
 #' The order [motif_enrichment_store()] expects `cell_type` in.
