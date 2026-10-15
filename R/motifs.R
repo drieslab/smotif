@@ -54,7 +54,7 @@ find_motifs <- function(sg,
         "backend = 'rust' requires the smotifrs companion package. ",
         "Install pre-built binaries via R-universe (no Rust toolchain ",
         "needed): install.packages('smotifrs', ",
-        "repos = c('https://rdries.r-universe.dev', getOption('repos')))",
+        "repos = c('https://drieslab.r-universe.dev', getOption('repos')))",
         call. = FALSE
       )
     }
