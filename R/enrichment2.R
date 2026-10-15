@@ -341,7 +341,7 @@ motif_enrichment <- function(sg,
 #' @param max_per_class cap on instances per class; `Inf` for no cap.
 #' @returns a `data.table` with `motif_id`, `instance`, `slot` (structural
 #'   position within the motif) and `cell_id`, in long form.
-#' @examples
+#' @examplesIf requireNamespace("smotifrs", quietly = TRUE)
 #' set.seed(1)
 #' sg <- build_spatial_graph(cbind(x = runif(50), y = runif(50)),
 #'     cell_types = sample(c("T", "B"), 50, TRUE),
