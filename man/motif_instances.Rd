@@ -27,6 +27,7 @@ at size 4 the full instance set is tens of millions of rows on a real
 dataset, which is why it is never returned by default.
 }
 \examples{
+\dontshow{if (requireNamespace("smotifrs", quietly = TRUE)) withAutoprint(\{ # examplesIf}
 set.seed(1)
 sg <- build_spatial_graph(cbind(x = runif(50), y = runif(50)),
     cell_types = sample(c("T", "B"), 50, TRUE),
@@ -34,4 +35,5 @@ sg <- build_spatial_graph(cbind(x = runif(50), y = runif(50)),
 )
 e <- motif_enrichment(sg, size = 3L, n_perm = 49L)
 motif_instances(sg, e$motif_id[1], size = 3L)
+\dontshow{\}) # examplesIf}
 }
