@@ -68,20 +68,26 @@ motif_enrichment <- function(sg,
     rust = TRUE,
     r = FALSE
   )
-  if (backend == "rust" && !have_rs) {
-    stop("backend = \"rust\" needs the smotifrs package", call. = FALSE)
+  if (backend == "rust") .require_smotifrs("backend = \"rust\"")
+  # with smotifrs installed, backend = "r" was a choice: say how to undo it
+  rs_fix <- if (have_rs) {
+    "Use backend = \"auto\" or \"rust\"."
+  } else {
+    .smotifrs_install_hint
   }
   if (!use_rust && size == 4L) {
     stop(
       "size 4 needs the smotifrs backend: it is one to two orders of ",
       "magnitude more instances than size 3, and the pure-R path would not ",
-      "finish on a real dataset. Install smotifrs, or use size 2 or 3.",
+      "finish on a real dataset. Use size 2 or 3, or the smotifrs backend. ",
+      rs_fix,
       call. = FALSE
     )
   }
   if (!use_rust && null == "conditional") {
     stop(
-      "the conditional null is implemented in the smotifrs backend only",
+      "the conditional null is implemented in the smotifrs backend only. ",
+      rs_fix,
       call. = FALSE
     )
   }
@@ -354,12 +360,7 @@ motif_instances <- function(sg, motif_ids, size = 3L, max_per_class = 5000) {
   if (!inherits(sg, "SpatialGraph")) {
     stop("`sg` must be a SpatialGraph", call. = FALSE)
   }
-  if (!requireNamespace("smotifrs", quietly = TRUE)) {
-    stop(
-      "motif_instances() needs the smotifrs backend; install it to use it",
-      call. = FALSE
-    )
-  }
+  .require_smotifrs("motif_instances()")
   ids <- as.character(sg$nodes$cell_id)
   out <- smotifrs::motif_instances_rs(
     from = match(as.character(sg$edges$source), ids),
@@ -406,12 +407,7 @@ motif_enrichment_store <- function(nodes_path,
                                    seed = 1L,
                                    null = c("label", "conditional"),
                                    ...) {
-  if (!requireNamespace("smotifrs", quietly = TRUE)) {
-    stop(
-      "reading a disk-backed edge store needs the smotifrs backend",
-      call. = FALSE
-    )
-  }
+  .require_smotifrs("reading a disk-backed edge store")
   smotifrs::motif_enrichment_edge_store(
     nodes_path = nodes_path, edges_path = edges_path,
     cell_type = cell_type, size = size, n_perm = n_perm,
@@ -446,9 +442,7 @@ motif_enrichment_stream <- function(edges,
                                     seed = 1L,
                                     null = c("label", "conditional"),
                                     ...) {
-  if (!requireNamespace("smotifrs", quietly = TRUE)) {
-    stop("reading a stream of edges needs the smotifrs backend", call. = FALSE)
-  }
+  .require_smotifrs("reading a stream of edges")
   smotifrs::motif_enrichment_stream(
     edges = edges, int_ids = int_ids,
     cell_type = cell_type, size = size, n_perm = n_perm,
@@ -465,8 +459,6 @@ motif_enrichment_stream <- function(edges,
 #' @returns a `data.table` with `node_id` and `int_id`.
 #' @export
 store_node_order <- function(nodes_path) {
-  if (!requireNamespace("smotifrs", quietly = TRUE)) {
-    stop("needs the smotifrs backend", call. = FALSE)
-  }
+  .require_smotifrs("store_node_order()")
   smotifrs::edge_store_nodes(nodes_path)
 }

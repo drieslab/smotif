@@ -1,3 +1,13 @@
+# smotif 0.2.1
+
+- Every error for a missing smotifrs now gives the R-universe install line
+  (pre-built binaries, no Rust toolchain). Only `find_motifs(backend =
+  "rust")` did before; `motif_enrichment_stream()`,
+  `motif_enrichment_store()`, `motif_instances()` and `store_node_order()`
+  only said smotifrs was needed. When smotifrs is installed but
+  `backend = "r"` was chosen, the size-4 and conditional-null refusals point
+  at `backend = "auto"` or `"rust"` instead.
+
 # smotif 0.2.0
 
 - `motif_enrichment_stream()`: enrichment over an Arrow stream of edges, with

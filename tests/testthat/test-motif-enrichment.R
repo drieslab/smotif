@@ -111,3 +111,21 @@ test_that("results are reproducible for a given seed", {
     b <- motif_enrichment(sg, size = 3L, n_perm = 40L, seed = 5L, backend = "r")
     expect_equal(a$expected, b$expected)
 })
+
+test_that("a missing smotifrs is reported with its R-universe install", {
+    expect_error(
+        smotif:::.require_smotifrs("reading a stream of edges",
+            pkg = "notSmotifrsAtAll"),
+        "reading a stream of edges needs the smotifrs companion package.*drieslab.r-universe.dev"
+    )
+    expect_true(smotif:::.require_smotifrs("anything", pkg = "stats"))
+})
+
+test_that("with smotifrs installed, a refusal points at the backend, not an install", {
+    skip_if_not_installed("smotifrs")
+    sg <- .sg(n = 80)
+    expect_error(
+        motif_enrichment(sg, size = 4L, backend = "r"),
+        "Use backend = \"auto\" or \"rust\""
+    )
+})
