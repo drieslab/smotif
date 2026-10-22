@@ -90,3 +90,21 @@ utils::globalVariables(c(
 utils::globalVariables(c(
   "observed", "expected", "sd_null", "p_enrich", "p_deplete", "p_adj", "z"
 ))
+
+# smotifrs is a Suggests companion. Every check that needs it gives the same
+# install line: pre-built binaries from the drieslab R-universe, so users do
+# not need a Rust toolchain.
+.smotifrs_install_hint <- paste0(
+  "Install pre-built binaries from R-universe (no Rust toolchain needed):\n",
+  "install.packages(\"smotifrs\", ",
+  "repos = c(\"https://drieslab.r-universe.dev\", getOption(\"repos\")))"
+)
+
+# `pkg` is a seam for the tests
+.require_smotifrs <- function(what, pkg = "smotifrs") {
+  if (!requireNamespace(pkg, quietly = TRUE)) {
+    stop(what, " needs the smotifrs companion package. ",
+      .smotifrs_install_hint, call. = FALSE)
+  }
+  invisible(TRUE)
+}
